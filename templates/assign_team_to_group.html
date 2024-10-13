@@ -1,28 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="jumbotron">
+<div class="container py-5 bg-light">
     <h1>
-        {% if event.sport_type=="football" %} 
-    ⚽️ 
-    {% elif event.sport_type=="basketball" %}
-    🏀 
-    {% elif event.sport_type=="handball" %}
-    🤾🏻
-    {% elif event.sport_type=="volleyball" %}
-    🏐
-    {% endif %} 
+        
         Csapatok hozzárendelése {{ event.name }} eseményhez
-        {% if event.sport_type=="football" %} 
-    ⚽️ 
-    {% elif event.sport_type=="basketball" %}
-    🏀 
-    {% elif event.sport_type=="handball" %}
-    🤾🏻
-    {% elif event.sport_type=="volleyball" %}
-    🏐
-    {% endif %} 
-    
-    </h1>
+        
+        </h1>
 {% if not existing_matches %}
 <form method="POST">
     {{ form.hidden_tag() }}
@@ -35,16 +18,16 @@
         {{ form.group(class="form-control") }}
     </div>
     <div class="form-group">
-        {{ form.submit(class="btn btn-primary") }}
+        {{ form.submit(class="btn btn btn-secondary") }}
     </div>
 </form>
 {% endif %}
 
     <h2>Jelenlegi csapatok és csoportok:</h2>
-    <ol>
+    <ol class="list-group">
         {% for team in teams %}
-            <li>
-              {{ team.name }} 
+            <li class="list-group-item">
+                {{ loop.index }}. {{ team.name }} 
               - Csoport: 
               
               {% for group in groups %}
@@ -59,12 +42,14 @@
         </ul>
 
     <h2>Elérhető csoportok:</h2>
-    <ul>
+    <ul class="list-group">
     {% for group in groups[:event.num_of_groups] %}
-        <li>{{ group.name }}</li>
+        <li class="list-group-item">{{ group.name }}</li>
     {% endfor %}
     {% if all_assigned %}
+    <div>
     <a href="{{ url_for('create_group_matches', event_id=event.id) }}" class="btn btn-secondary">Tovább a mérkőzésekre</a>
+</div>
     {% else %}
     <div class="alert alert-warning" role="alert">
         Minden csapatnak kell, hogy legyen csoportja

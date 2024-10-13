@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="container py-5 bg-light">
 <h1>Mérkőzés kiválasztása {{ event.name }}</h1>
 <div class="container">
     
@@ -8,10 +9,10 @@
             <li class="list-group-item">
                 {% if not existing_next_stage %}
                 {% if match.team1_score is none and match.team2_score is none %}
-                <a href="{{ url_for('enter_result', event_id=event.id, match_id=match.id) }}" class="btn btn-secondary btn-lg active" role="button" aria-pressed="true">
+                <a href="{{ url_for('enter_result', event_id=event.id, match_id=match.id) }}" class="btn btn-warning active" role="button" aria-pressed="true">
                     {{ match.team1.name }} vs. {{ match.team2.name }}
                     {% else %}
-                    <a href="{{ url_for('enter_result', event_id=event.id, match_id=match.id) }}" class="btn btn-success btn-lg active" role="button" aria-pressed="true">
+                    <a href="{{ url_for('enter_result', event_id=event.id, match_id=match.id) }}" class="btn btn-success  active" role="button" aria-pressed="true">
                         {{ match.team1.name }} vs. {{ match.team2.name }}
                         {{ match.team1_score }} : {{ match.team2_score }}
                     {% endif %}
@@ -47,7 +48,7 @@
         
    
     
- 
+    </div>
 </div>
 
 {% endblock %}

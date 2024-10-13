@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-
+<div class="container py-5 bg-light">
 <h1>
     {% if event.sport_type=="football" %} 
     ⚽️ 
@@ -24,24 +24,24 @@
 </h1>
 <div class="container">
     <div class="navbar-nav">
-        <a class="nav-item nav-link" href="{{ url_for('add_team', event_id=event.id) }}" role="button" aria-pressed="true"><button type="button" class="btn btn-outline-info">Csapatok</button></a>
+        <a class="nav-item nav-link" href="{{ url_for('add_team', event_id=event.id) }}" role="button" aria-pressed="true"><button type="button" class="btn btn-info">Csapatok</button></a>
         {% if groups %}
-        <a class="nav-item nav-link" href="{{ url_for('assign_team_to_group', event_id=event.id) }}"  role="button" aria-pressed="true"><button type="button" class="btn btn-outline-info">Csapatok beosztása csoportokba</button></a>
+        <a class="nav-item nav-link" href="{{ url_for('assign_team_to_group', event_id=event.id) }}"  role="button" aria-pressed="true"><button type="button" class="btn btn-info">Csapatok beosztása csoportokba</button></a>
         {% endif %}
         {% if matches %}
-        <a class="group_idnav-item nav-link" href="{{ url_for('select_match', event_id=event.id) }}"  role="button" aria-pressed="true"><button type="button" class="btn btn-outline-info">Csoport mérkőzések</button></a>
+        <a class="group_idnav-item nav-link" href="{{ url_for('select_match', event_id=event.id) }}"  role="button" aria-pressed="true"><button type="button" class="btn btn-info">Csoport mérkőzések</button></a>
         {% endif %}
 
         {% if event_state in ["knock_out", "advance_to_knockout"] %}
-    <a class="group_idnav-item nav-link" href="{{ url_for('list_knockout_stage_matches', event_id=event.id, group_id=max_group_id) }}"  role="button" aria-pressed="true"><button type="button" class="btn btn-outline-info">Kieséses szakasz</button></a>
+    <a class="group_idnav-item nav-link" href="{{ url_for('list_knockout_stage_matches', event_id=event.id, group_id=max_group_id) }}"  role="button" aria-pressed="true"><button type="button" class="btn btn-info">Kieséses szakasz</button></a>
         {% endif %}
         
         {% if event.is_ended %}
-        <a class="group_idnav-item nav-link" href="{{ url_for('event_result', event_id=event.id) }}"  role="button" aria-pressed="true"><button type="button" class="btn btn-outline-info">Végeredmény megtekintése</button></a>
+        <a class="group_idnav-item nav-link" href="{{ url_for('event_result', event_id=event.id) }}"  role="button" aria-pressed="true"><button type="button" class="btn btn-info">Végeredmény megtekintése</button></a>
         {% endif %}
         
   
       </div> 
 </div>
-
+</div>
 {% endblock %}

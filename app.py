@@ -1,11 +1,22 @@
+from flask import render_template, make_response
+from flask_login import login_user
+from flask import request, redirect, url_for, flash, render_template
 import os
-from flask import Flask, render_template, url_for, redirect, request, flash
-from forms import AddForm, AddTeamForm, AssignTeamForm, MatchResultForm
-from models import db, Event, init_db, Team, Group, Match
+from flask import Flask, render_template, url_for, redirect, request, flash, session, abort
+from forms import AddTeamForm, AssignTeamForm, MatchResultForm, AddParticipantForm, AddIndividualResultForm, AddEventForm1, AddEventForm2, AddEventForm3, LoginForm, RegistrationForm
+from models import db, Event, init_db, Team, Group, Match, Participant, Individual_Result, User
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func
+from datetime import datetime
+from flask_bcrypt import Bcrypt
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import LoginManager
+from flask_login import login_user, login_required, logout_user, current_user
+import csv
+import io
 
 
+login_manager = LoginManager()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'mysecretkey'
 
@@ -13,8 +24,86 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + \
     os.path.join(basedir, 'data.sqlite')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 init_db(app)
+
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = "Kérjük, jelentkezz be az oldal eléréséhez."
+login_manager.login_message_category = "info"
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+
+@app.route('/welcome')
+@login_required
+def welcome_user():
+    return render_template('welcome_user.html')
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('Sikeresen kilépett.', 'success')  # Flash üzenet beállítása
+    return redirect(url_for('index'))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(email=form.email.data).first()
+        if user is not None and user.check_password(form.password.data):
+            login_user(user)
+            next = request.args.get('next')
+            if not next or not next.startswith('/'):
+                next = url_for('list_events')
+            return redirect(next)
+        else:
+            flash('Hibás email vagy jelszó. Próbálja újra.',)
+
+    return render_template('login.html', form=form)
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    form = RegistrationForm()
+
+    if form.validate_on_submit():
+        existing_user_username = User.query.filter_by(
+            username=form.username.data).first()
+        existing_user_email = User.query.filter_by(
+            email=form.email.data).first()
+
+        if existing_user_username:
+            flash('Ez a felhasználónév már foglalt. Kérjük, válasszon másikat.', 'error')
+            return redirect(url_for('register'))
+
+        if existing_user_email:
+            flash(
+                'Ez az email cím már foglalt. Kérjük, használjon másik email címet.', 'error')
+            return redirect(url_for('register'))
+
+        # Ha minden rendben, létrehozzuk a felhasználót
+        user = User(email=form.email.data,
+                    username=form.username.data, password=form.password.data)
+        db.session.add(user)
+        db.session.commit()
+
+        flash('Köszönjük a regisztrációd! \n Lépj be a folytatáshoz!', 'success')
+        return redirect(url_for('login'))
+
+    # Ha nem sikeres a validáció, kezeljük a hibákat
+    if form.errors:
+        # Iterálunk a form hibákon és flash üzenetben jelenítjük meg
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f'{error}', 'error')
+
+    return render_template('register.html', form=form)
 
 
 @app.route('/')
@@ -22,36 +111,15 @@ def index():
     return render_template('home.html')
 
 
-@app.route('/add', methods=['GET', 'POST'])
-def add_event():
-    form = AddForm()
-
-    if form.validate_on_submit():
-        name = form.name.data
-        date = form.date.data
-        sport_type = form.sport_type.data
-        event_type = form.event_type.data
-        num_of_groups = form.num_of_groups.data
-        is_ended = False
-
-        new_event = Event(name, date, sport_type, event_type,
-                          num_of_groups, is_ended)
-        db.session.add(new_event)
-        db.session.commit()
-
-        return redirect(url_for('add_team', event_id=new_event.id))
-
-    return render_template('add.html', form=form)
-
-
 @app.route('/list')
+@login_required
 def list_events():
-    events = Event.query.all()
-
+    events = Event.query.filter_by(user_id=current_user.id).all()
     return render_template('list.html', events=events)
 
 
 @app.route('/delete', methods=['POST'])
+@login_required
 def del_event():
     event_id = request.form.get('event_id')
     event = Event.query.get(event_id)
@@ -62,6 +130,7 @@ def del_event():
 
 
 @app.route('/manage_event/<int:event_id>', methods=['GET', 'POST'])
+@login_required
 def manage_event(event_id):
     event = Event.query.get_or_404(event_id)
     teams = Team.query.filter_by(event_id=event_id).all()
@@ -69,17 +138,22 @@ def manage_event(event_id):
     matches = Match.query.filter_by(event_id=event_id).all()
     max_group_id = db.session.query(func.max(Match.group_id)).filter_by(
         event_id=event_id).scalar()
+    participants = Participant.query.filter_by(
+        event_id=event_id).all()  # Lekérjük az egyéni résztvevőket
     event_state = set_type_of_match(
         event_id, max_group_id)
     if event.event_type == "group_knockout":
         return render_template('manage_event_for_group_knockout.html', event=event, teams=teams, groups=groups, matches=matches, event_state=event_state, max_group_id=max_group_id)
-    if event.event_type == "knockout":
+    elif event.event_type == "knockout":
         return render_template('manage_event_for_knockout.html', event=event, teams=teams, groups=groups, matches=matches, event_state=event_state, max_group_id=max_group_id)
-    if event.event_type == "round_robin":
+    elif event.event_type == "round_robin":
         return render_template('manage_event_for_round_robin.html', event=event, teams=teams, groups=groups, matches=matches, event_state=event_state, max_group_id=max_group_id)
+    elif event.event_type == "individual_sport":
+        return render_template('manage_event_for_individual.html', event=event, participants=participants, matches=matches, event_state=event_state)
 
 
 @app.route('/add_team/<int:event_id>', methods=['GET', 'POST'])
+@login_required
 def add_team(event_id):
     form = AddTeamForm()
 
@@ -102,6 +176,7 @@ def add_team(event_id):
 
 
 @app.route('/delete_team', methods=['POST'])
+@login_required
 def del_team():
     team_id = request.form.get('team_id')
     event_id = request.form.get('event_id')
@@ -117,6 +192,8 @@ def del_team():
 
 # # CREATE RR MATCHES
 @app.route('/create_round_robin_matches/<int:event_id>', methods=['GET', 'POST'])
+@login_required
+@login_required
 def create_round_robin_matches(event_id):
     group_id = Group.query.filter_by(event_id=event_id).first().id
     teams = Team.query.filter_by(event_id=event_id).all()
@@ -139,6 +216,7 @@ def create_round_robin_matches(event_id):
 
 
 @app.route('/list_of_round_robin_matches/<int:event_id>', methods=['GET', 'POST'])
+@login_required
 def list_of_round_robin_matches(event_id):
     event = Event.query.get_or_404(event_id)
     group = Group.query.filter_by(event_id=event_id).first()
@@ -149,6 +227,7 @@ def list_of_round_robin_matches(event_id):
 
 
 @app.route('/close_round_robin_event/<int:event_id>', methods=['GET', 'POST'])
+@login_required
 def close_round_robin_event(event_id):
     event = Event.query.get_or_404(event_id)
     group = Group.query.filter_by(event_id=event_id).first()
@@ -161,6 +240,7 @@ def close_round_robin_event(event_id):
 
 
 @app.route('/round_robin_overview/<int:event_id>', methods=['GET', 'POST'])
+@login_required
 def round_robin_overview(event_id):
     event = Event.query.get_or_404(event_id)
     group = Group.query.filter_by(event_id=event_id).first()
@@ -173,6 +253,7 @@ def round_robin_overview(event_id):
 
 
 @app.route('/create_groups/<int:event_id>')
+@login_required
 def create_groups(event_id):
     event = Event.query.get_or_404(event_id)
     existing_groups = Group.query.filter_by(event_id=event_id).all()
@@ -235,6 +316,7 @@ def create_groups(event_id):
 
 
 @app.route('/create_first_knockout/<int:event_id>')
+@login_required
 def create_first_knockout(event_id):
     event = Event.query.get_or_404(event_id)
     teams = Team.query.filter_by(event_id=event_id)
@@ -267,6 +349,7 @@ def create_first_knockout(event_id):
 
 
 @app.route('/assign_team_to_group/<int:event_id>', methods=['GET', 'POST'])
+@login_required
 def assign_team_to_group(event_id):
     form = AssignTeamForm()
     event = Event.query.get_or_404(event_id)
@@ -294,6 +377,7 @@ def assign_team_to_group(event_id):
 
 
 @app.route('/create_group_matches/<int:event_id>', methods=['GET', 'POST'])
+@login_required
 def create_group_matches(event_id):
     groups = Group.query.filter_by(event_id=event_id).all()
     teams = Team.query.filter_by(event_id=event_id).all()
@@ -395,6 +479,7 @@ def generate_group_data_overview(event_id, group_ids=[]):
 
 
 @app.route('/groups_overview/<int:event_id>', methods=['GET', 'POST'])
+@login_required
 def groups_overview(event_id):
     event = Event.query.get_or_404(event_id)
     groups = Group.query.filter_by(event_id=event_id).all()
@@ -416,6 +501,8 @@ def set_type_of_match(event_id, match_group_id=None):
     if event.event_type == "round_robin":
         return "round_robin"
 
+    if event.event_type == "knockout":
+        return "knockout"
     if match is not None:
         if match_group_id in range(min(group.id for group in groups), max(group.id for group in groups[:event.num_of_groups])+1):
             return "group_match"
@@ -423,16 +510,16 @@ def set_type_of_match(event_id, match_group_id=None):
         elif match_group_id == max(group.id for group in groups[:event.num_of_groups])+1:
             return "advance_to_knockout"
         else:
-            return "knock_out"
+            return "knockout"
     return "preparation"
 
 
 @app.route('/enter_result/<int:event_id>/<int:match_id>', methods=['GET', 'POST'])
+@login_required
 def enter_result(event_id, match_id):
     event = Event.query.get_or_404(event_id)
     match = Match.query.get_or_404(match_id)
     group_id = match.group_id
-    print(match.group_id)
     form = MatchResultForm(obj=match)
     if form.validate_on_submit():
         match.team1_score = form.team1_score.data
@@ -465,6 +552,7 @@ def is_group_complete_by_group_id(event_id, group_id):
 
 
 @app.route('/select_match/<int:event_id>', methods=['GET'])
+@login_required
 def select_match(event_id):
     event = Event.query.get_or_404(event_id)
     matches = Match.query.filter_by(event_id=event_id).all()
@@ -492,6 +580,7 @@ def select_match(event_id):
 
 
 @app.route('/advance_to_knockout/<int:event_id>')
+@login_required
 def advance_to_knockout(event_id):
     event = Event.query.get_or_404(event_id)
     group_data = generate_group_data_overview(event_id)
@@ -556,6 +645,7 @@ def is_not_draw_in_group(event_id, group_id):
 
 
 @app.route('/list_knockout_stage_matches/<int:event_id>/<int:group_id>')
+@login_required
 def list_knockout_stage_matches(event_id, group_id):
     event = Event.query.get_or_404(event_id)
     matches = Match.query.filter_by(
@@ -587,6 +677,7 @@ def create_knockout_matches(event_id, group_id, winners):
 
 
 @app.route('/knockout_stage/<int:event_id>/<int:group_id>')
+@login_required
 def knockout_stage(event_id, group_id):
     event = Event.query.get_or_404(event_id)
     prev_group_id = group_id
@@ -639,6 +730,7 @@ def get_losers_by_group(event_id, group_id):
 
 
 @app.route('/event_result/<int:event_id>')
+@login_required
 def event_result(event_id):
     event = Event.query.get_or_404(event_id)
     group_data = generate_group_data_overview(event_id)
@@ -819,6 +911,212 @@ def event_result(event_id):
             final_rr_result.append(
                 {'rank': i+1, 'name': data['team_name']})
         return render_template('event_result_for_round_robin.html', event=event, final_rr_result=final_rr_result)
+
+
+##################
+# EGYÉNI SPORTOK #
+##################
+
+
+@app.route('/add_participant/<int:event_id>', methods=['GET', 'POST'])
+@login_required
+def add_participant(event_id):
+    form = AddParticipantForm()
+    event = Event.query.get(event_id)  # Az esemény lekérése
+    participants = Participant.query.filter_by(event_id=event_id).all()
+    form.event_id.data = event_id  # Az esemény ID-jének beállítása a formon
+
+    if form.validate_on_submit():
+        name = form.name.data  # A form mezőből lekérjük a nevet
+        new_participant = Participant(
+            name=name, event_id=event_id)
+        # Új résztvevő hozzáadása az adatbázishoz
+        db.session.add(new_participant)
+        db.session.commit()  # Módosítások mentése az adatbázisba
+
+        # Visszairányítás az űrlapra
+        return redirect(url_for('add_participant', event_id=event_id))
+
+    # Sablon renderelése
+    return render_template('add_participant.html', form=form, event=event,  participants=participants)
+
+
+@app.route('/delete_participant', methods=['POST'])
+@login_required
+def del_participant():
+    participant_id = request.form.get('participant_id')
+    event_id = request.form.get('event_id')
+    participant = Participant.query.get(participant_id)
+    db.session.delete(participant)
+    db.session.commit()
+
+    # Visszairányítás az esemény oldalára vagy ahonnan érkezett
+    return redirect(url_for('add_participant', event_id=event_id))
+
+
+@app.route('/add_individual_result/<int:event_id>/<int:participant_id>', methods=['GET', 'POST'])
+@login_required
+def add_individual_result(event_id, participant_id):
+    form = AddIndividualResultForm()
+    event = Event.query.get(event_id)
+    participant = Participant.query.get_or_404(participant_id)
+
+    if form.validate_on_submit():
+        # A mentés során az event_id és a participant_id az URL-ből jön
+        new_result = Individual_Result(
+            event_id=event_id,
+            participant_id=participant_id,
+            score=form.score.data  # Ezt a formból kapjuk
+        )
+        db.session.add(new_result)
+        db.session.commit()
+        # Visszairányítás a résztvevők listájához
+        return redirect(url_for('list_participants', event_id=event_id))
+
+    return render_template('add_individual_result.html', form=form, participant=participant, event_id=event_id, event=event)
+
+
+@app.route('/participants/<int:event_id>', methods=['GET'])
+@login_required
+def list_participants(event_id):
+    # Lekérjük az adott eseményhez tartozó összes résztvevőt
+    participants = Participant.query.filter_by(event_id=event_id).all()
+    event = Event.query.get(event_id)
+
+    # Minden résztvevőhöz lekérjük a legfrissebb eredményét
+    participants_with_scores = []
+    for participant in participants:
+        # Lekérjük az adott résztvevő legfrissebb eredményét az adott eseményhez
+        latest_result = Individual_Result.query.filter_by(
+            participant_id=participant.id, event_id=event_id).order_by(Individual_Result.id.desc()).first()
+
+        # Hozzáadjuk az eredményt a résztvevő objektumhoz (vagy None, ha nincs eredmény)
+        if latest_result:
+            participant.score = latest_result.score
+        else:
+            None
+
+        participants_with_scores.append(participant)
+    # Visszaküldjük a sablonba a résztvevőket az eredményekkel együtt
+    return render_template('list_participants.html', participants=participants_with_scores, event_id=event_id, event=event)
+
+
+@app.route('/individual_final_rank/<int:event_id>', methods=['GET'])
+@login_required
+def individual_final_rank(event_id):
+    # Lekérjük az eseményt és a résztvevőket
+    event = Event.query.get_or_404(event_id)
+    participants = Participant.query.filter_by(event_id=event_id).all()
+
+    # Minden résztvevőhöz lekérjük a legfrissebb eredményét
+    participants_with_scores = []
+    for participant in participants:
+        latest_result = Individual_Result.query.filter_by(
+            participant_id=participant.id, event_id=event_id).order_by(Individual_Result.id.desc()).first()
+
+        if latest_result:
+            participant.score = latest_result.score
+        else:
+            participant.score = None  # Nincs eredmény
+
+        participants_with_scores.append(participant)
+
+    # A rangsor kiszámítása a sport típus alapján
+    if event.sport_type in ['running', 'swimming']:  # A kevesebb a jobb
+        participants_with_scores = sorted(
+            [p for p in participants_with_scores if p.score is not None], key=lambda p: p.score)
+    elif event.sport_type == 'throwing':  # A több a jobb
+        participants_with_scores = sorted(
+            [p for p in participants_with_scores if p.score is not None], key=lambda p: p.score, reverse=True)
+
+    # Visszaküldjük a sablonba a résztvevőket és a helyezéseket
+    return render_template('individual_final_rank.html', participants=participants_with_scores, event=event)
+
+
+@ app.route('/add_event/step1', methods=['GET', 'POST'])
+@ login_required
+def add_event_step1():
+    form = AddEventForm1()
+    individual_sports = ["running", "swimming", "jumping", "throwing"]
+    if form.validate_on_submit():
+        session['name'] = form.name.data
+        # A dátum stringként tárolása a sessionben
+        session['date'] = form.date.data.strftime('%Y-%m-%d')
+        session['sport_type'] = form.sport_type.data
+        # Tovább a következő lépéshez
+
+        if session['sport_type'] in individual_sports:
+            name = session["name"]
+            # Átalakítjuk a stringet dátum objektummá
+            date_str = session["date"]
+            date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            sport_type = session["sport_type"]
+            event_type = "individual_sport"
+            num_of_groups = 0
+            is_ended = False
+            user_id = current_user.id
+            new_event = Event(name, date, sport_type,
+                              event_type, num_of_groups, is_ended, user_id)
+            db.session.add(new_event)
+            db.session.commit()
+            return redirect(url_for('add_participant', event_id=new_event.id))
+
+        return redirect(url_for('add_event_step2'))
+    return render_template('add_event_step1.html', form=form)
+
+
+@ app.route('/add_event/step2', methods=['GET', 'POST'])
+@ login_required
+def add_event_step2():
+    form = AddEventForm2()
+    if form.validate_on_submit():
+        session['event_type'] = form.event_type.data
+
+        if session['event_type'] == "round_robin" or session['event_type'] == "knockout":
+            name = session["name"]
+            # Átalakítjuk a stringet dátum objektummá
+            date_str = session["date"]
+            date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            sport_type = session["sport_type"]
+            event_type = session['event_type']
+            num_of_groups = 0
+            is_ended = False
+            user_id = current_user.id
+            new_event = Event(name, date, sport_type,
+                              event_type, num_of_groups, is_ended, user_id)
+            db.session.add(new_event)
+            db.session.commit()
+            return redirect(url_for('add_team', event_id=new_event.id))
+        return redirect(url_for('add_event_step3'))
+
+    return render_template('add_event_step2.html', form=form)
+
+
+@ app.route('/add_event/step3', methods=['GET', 'POST'])
+@ login_required
+def add_event_step3():
+    form = AddEventForm3()
+    if form.validate_on_submit():
+        num_of_groups = form.num_of_groups.data
+        name = session["name"]
+        date_str = session["date"]
+        date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        sport_type = session["sport_type"]
+        event_type = session['event_type']
+        is_ended = False
+        user_id = current_user.id
+        new_event = Event(name, date, sport_type,
+                          event_type, num_of_groups, is_ended, user_id)
+        db.session.add(new_event)
+        db.session.commit()
+        return redirect(url_for('add_team', event_id=new_event.id))
+
+    return render_template('add_event_step3.html', form=form)
+
+
+#########
+# EXPORT
+#########
 
 
 if __name__ == '__main__':

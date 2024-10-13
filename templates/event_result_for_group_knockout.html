@@ -1,18 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="container py-5 bg-light">
 {% if event.event_type == "group_knockout" and event.num_of_groups == 4 %}
 <div class="container">
     <h1>Az esemény végeredménye {{ event.name }}</h1>
-    <h2>🥇 1. helyezett 🥇</h2>
+    <h2>🥇 1. helyezett</h2>
     <ul class="list-group">
         <li class="list-group-item">{{ final_winner.name }}</li>
     </ul>
-    <h2>🥈 2. helyezett 🥈</h2>
+    <h2>🥈 2. helyezett</h2>
     <ul class="list-group">
     <li class="list-group-item">{{ final_loser[0].name }}</li>
 </ul>
     {% if losers_s %}
-    <h2>🥉 3. helyezettek 🥉</h2>
+    <h2>🥉 3. helyezettek</h2>
     <ul class="list-group">
         {% for team in losers_s %}
         <li class="list-group-item">{{ team.name }}</li>
@@ -60,5 +61,6 @@
         {% endif %}
     </div>
         {% endif %}
-        
+
+    </div>
 {% endblock %}

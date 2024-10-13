@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="container py-5 bg-light">
 
 <h1>
     
@@ -29,13 +30,13 @@
         {{ form.match_id }}
         <hr>
 
-        <button type="submit" class="btn btn-primary">Eredmények Mentése</button>
+        <button type="submit" class="btn btn btn-secondary">Eredmények Mentése RR</button>
     </form>
 
     <div style="margin: 20px 0;">
-        <a href="{{ url_for('list_of_round_robin_matches', event_id=event.id) }}" class="btn btn-primary">Vissza a körmékőzésekhez</a>
+        <a href="{{ url_for('list_of_round_robin_matches', event_id=event.id) }}" class="btn btn btn-secondary">Vissza a körmékőzésekhez</a>
     </div>
 </div>
-
+</div>
 {% endblock %}
 
