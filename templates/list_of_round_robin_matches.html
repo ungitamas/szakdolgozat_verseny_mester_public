@@ -2,6 +2,11 @@
 {% block content %}
 <div class="container py-5 bg-light">
 <h1>Mérkőzés kiválasztása</h1>
+{% if event.sport_type == "volleyball" %}
+<div class="alert alert-info"">
+    A Röplabda esetén a szett győzelmeket kérjük rögzíteni!
+</div>
+{% endif %}
 <div class="container">
     
         
@@ -30,9 +35,18 @@
             </li>
             {% endfor %}
         </ul>
+
+        {% if not not_draw_in_group and (event.sport_type == "basketball" or event.sport_type == "volleyball") %}
+            <div class="alert alert-warning" role="alert">
+                Ebben a sportágban nem lehet döntetlen eredmény. 
+            </div>
+    {% else %}
         <div style="margin-top: 20px;">
             <a href="{{ url_for('round_robin_overview', event_id=event.id) }}" class="btn btn-secondary">Tabella</a>
         </div>
+    {% endif %}
+    
+
         {% if round_robin_checker and not event.is_ended %}
         <div style="margin-top: 20px;">
             <a href="{{ url_for('close_round_robin_event', event_id=event.id) }}" class="btn btn-secondary">Esemény lezárása</a>

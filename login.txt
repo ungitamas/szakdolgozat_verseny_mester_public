@@ -1,3 +1,5 @@
-verseny@mester.com asdf
-
-versenyegyeni@mester.com EgyéniMester
+csapatverseny@mester.com
+CsapatVerseny
+************
+egyeniverseny@mester.com
+EgyéniVerseny

@@ -44,10 +44,10 @@ class MatchResultForm(FlaskForm):
 
 
 class AddParticipantForm(FlaskForm):
-    name = StringField('Csapatnév:', validators=[DataRequired()])
+    name = StringField('Versenyzőnév:', validators=[DataRequired()])
     event_id = IntegerField('event_id', validators=[
                             DataRequired()], render_kw={'readonly': True})
-    submit = SubmitField('Résztvenő hozzáadása')
+    submit = SubmitField('Résztvevő hozzáadása')
 
 
 class AddIndividualResultForm(FlaskForm):

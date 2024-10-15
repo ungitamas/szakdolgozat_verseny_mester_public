@@ -123,9 +123,10 @@ def list_events():
 def del_event():
     event_id = request.form.get('event_id')
     event = Event.query.get(event_id)
-    db.session.delete(event)
-    db.session.commit()
-    events = Event.query.all()
+    if event and event.user_id == current_user.id:
+        db.session.delete(event)
+        db.session.commit()
+    events = Event.query.filter_by(user_id=current_user.id).all()
     return render_template('list.html', events=events)
 
 
@@ -142,6 +143,10 @@ def manage_event(event_id):
         event_id=event_id).all()  # Lekérjük az egyéni résztvevőket
     event_state = set_type_of_match(
         event_id, max_group_id)
+
+    if event.user_id != current_user.id:
+        abort(403)
+
     if event.event_type == "group_knockout":
         return render_template('manage_event_for_group_knockout.html', event=event, teams=teams, groups=groups, matches=matches, event_state=event_state, max_group_id=max_group_id)
     elif event.event_type == "knockout":
@@ -158,6 +163,8 @@ def add_team(event_id):
     form = AddTeamForm()
 
     event = Event.query.get(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     form.event_id.data = event_id
 
     teams = Team.query.filter_by(event_id=event_id).all()
@@ -193,7 +200,6 @@ def del_team():
 # # CREATE RR MATCHES
 @app.route('/create_round_robin_matches/<int:event_id>', methods=['GET', 'POST'])
 @login_required
-@login_required
 def create_round_robin_matches(event_id):
     group_id = Group.query.filter_by(event_id=event_id).first().id
     teams = Team.query.filter_by(event_id=event_id).all()
@@ -219,17 +225,22 @@ def create_round_robin_matches(event_id):
 @login_required
 def list_of_round_robin_matches(event_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     group = Group.query.filter_by(event_id=event_id).first()
     group_id = group.id
     matches = Match.query.filter_by(event_id=event_id)
     round_robin_checker = is_group_complete_by_group_id(event_id, group_id)
-    return render_template('list_of_round_robin_matches.html', event=event, matches=matches, round_robin_checker=round_robin_checker)
+    not_draw_in_group = is_not_draw_in_group(event_id, group_id)
+    return render_template('list_of_round_robin_matches.html', event=event, matches=matches, round_robin_checker=round_robin_checker, not_draw_in_group=not_draw_in_group)
 
 
 @app.route('/close_round_robin_event/<int:event_id>', methods=['GET', 'POST'])
 @login_required
 def close_round_robin_event(event_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     group = Group.query.filter_by(event_id=event_id).first()
     group_id = group.id
     round_robin_checker = is_group_complete_by_group_id(event_id, group_id)
@@ -243,6 +254,8 @@ def close_round_robin_event(event_id):
 @login_required
 def round_robin_overview(event_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     group = Group.query.filter_by(event_id=event_id).first()
     group_id = group.id
     group_ids = []
@@ -256,6 +269,8 @@ def round_robin_overview(event_id):
 @login_required
 def create_groups(event_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     existing_groups = Group.query.filter_by(event_id=event_id).all()
     team_count = db.session.query(func.count(
         Team.id)).filter_by(event_id=event_id).scalar()
@@ -319,6 +334,8 @@ def create_groups(event_id):
 @login_required
 def create_first_knockout(event_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     teams = Team.query.filter_by(event_id=event_id)
     group = Group.query.filter_by(event_id=event_id).first()
     knockout_first_group_id = group.id
@@ -353,6 +370,8 @@ def create_first_knockout(event_id):
 def assign_team_to_group(event_id):
     form = AssignTeamForm()
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     teams = Team.query.filter_by(event_id=event_id).all()
     groups = Group.query.filter_by(event_id=event_id).all()
     existing_matches = Match.query.filter_by(event_id=event_id).all()
@@ -408,6 +427,8 @@ def create_group_matches(event_id):
 
 def generate_group_data_overview(event_id, group_ids=[]):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     query = Match.query.filter(Match.event_id == event_id)
     if group_ids:
         query = query.filter(Match.group_id.in_(group_ids))
@@ -421,6 +442,7 @@ def generate_group_data_overview(event_id, group_ids=[]):
         team2 = db.session.get(Team, match.team2_id)
 
         if team1 and team2:
+            # Inicializáljuk a csapat statisztikáit, ha még nem léteznek
             if team1.id not in team_stats:
                 team_stats[team1.id] = {
                     'name': team1.name, 'scored': 0, 'conceded': 0, 'points': 0, 'played': 0, 'wins': 0, 'losses': 0, 'draws': 0}
@@ -428,6 +450,7 @@ def generate_group_data_overview(event_id, group_ids=[]):
                 team_stats[team2.id] = {
                     'name': team2.name, 'scored': 0, 'conceded': 0, 'points': 0, 'played': 0, 'wins': 0, 'losses': 0, 'draws': 0}
 
+            # Ha a mérkőzés lejátszásra került, számoljuk a statisztikákat
             if match.team1_score is not None and match.team2_score is not None:
                 team_stats[team1.id]['played'] += 1
                 team_stats[team2.id]['played'] += 1
@@ -437,19 +460,49 @@ def generate_group_data_overview(event_id, group_ids=[]):
                 team_stats[team2.id]['scored'] += match.team2_score
                 team_stats[team2.id]['conceded'] += match.team1_score
 
-                if match.team1_score > match.team2_score:
-                    team_stats[team1.id]['points'] += 3
-                    team_stats[team1.id]['wins'] += 1
-                    team_stats[team2.id]['losses'] += 1
-                elif match.team1_score < match.team2_score:
-                    team_stats[team2.id]['points'] += 3
-                    team_stats[team2.id]['wins'] += 1
-                    team_stats[team1.id]['losses'] += 1
-                else:
-                    team_stats[team1.id]['points'] += 1
-                    team_stats[team2.id]['points'] += 1
-                    team_stats[team1.id]['draws'] += 1
-                    team_stats[team2.id]['draws'] += 1
+                # Sportágspecifikus pontozás
+                if event.sport_type == 'football':  # Labdarúgás
+                    if match.team1_score > match.team2_score:
+                        team_stats[team1.id]['points'] += 3
+                        team_stats[team1.id]['wins'] += 1
+                        team_stats[team2.id]['losses'] += 1
+                    elif match.team1_score < match.team2_score:
+                        team_stats[team2.id]['points'] += 3
+                        team_stats[team2.id]['wins'] += 1
+                        team_stats[team1.id]['losses'] += 1
+                    else:
+                        team_stats[team1.id]['points'] += 1
+                        team_stats[team2.id]['points'] += 1
+                        team_stats[team1.id]['draws'] += 1
+                        team_stats[team2.id]['draws'] += 1
+
+                # Kézilabda és kosárlabda
+                elif event.sport_type in ['handball', 'basketball']:
+                    if match.team1_score > match.team2_score:
+                        team_stats[team1.id]['points'] += 2
+                        team_stats[team1.id]['wins'] += 1
+                        team_stats[team2.id]['losses'] += 1
+                    elif match.team1_score < match.team2_score:
+                        team_stats[team2.id]['points'] += 2
+                        team_stats[team2.id]['wins'] += 1
+                        team_stats[team1.id]['losses'] += 1
+                    elif event.sport_type == 'handball' and match.team1_score == match.team2_score:
+                        # Csak kézilabdában lehet döntetlen
+                        team_stats[team1.id]['points'] += 1
+                        team_stats[team2.id]['points'] += 1
+                        team_stats[team1.id]['draws'] += 1
+                        team_stats[team2.id]['draws'] += 1
+
+                elif event.sport_type == 'volleyball':  # Röplabda
+                    if match.team1_score > match.team2_score:
+                        team_stats[team1.id]['points'] += 2
+                        team_stats[team1.id]['wins'] += 1
+                        team_stats[team2.id]['losses'] += 1
+                    elif match.team1_score < match.team2_score:
+                        team_stats[team2.id]['points'] += 2
+                        team_stats[team2.id]['wins'] += 1
+                        team_stats[team1.id]['losses'] += 1
+
     group_data = {}
     for group in groups[:event.num_of_groups] if event.num_of_groups else groups:
         teams = Team.query.filter_by(group_id=group.id).all()
@@ -475,6 +528,7 @@ def generate_group_data_overview(event_id, group_ids=[]):
             team_data, key=lambda x: (x['points'], x['goal_difference']), reverse=True
         )
         group_data[group.name] = sorted_team_data
+
     return group_data
 
 
@@ -482,6 +536,8 @@ def generate_group_data_overview(event_id, group_ids=[]):
 @login_required
 def groups_overview(event_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     groups = Group.query.filter_by(event_id=event_id).all()
     # Égetett érték!!!!
     group_ids = []
@@ -518,6 +574,8 @@ def set_type_of_match(event_id, match_group_id=None):
 @login_required
 def enter_result(event_id, match_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     match = Match.query.get_or_404(match_id)
     group_id = match.group_id
     form = MatchResultForm(obj=match)
@@ -555,6 +613,8 @@ def is_group_complete_by_group_id(event_id, group_id):
 @login_required
 def select_match(event_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     matches = Match.query.filter_by(event_id=event_id).all()
     groups = Group.query.filter_by(event_id=event_id).all()
     group_checker_results = []
@@ -583,6 +643,8 @@ def select_match(event_id):
 @login_required
 def advance_to_knockout(event_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     group_data = generate_group_data_overview(event_id)
     groups = Group.query.filter_by(event_id=event_id).all()
 
@@ -648,6 +710,8 @@ def is_not_draw_in_group(event_id, group_id):
 @login_required
 def list_knockout_stage_matches(event_id, group_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     matches = Match.query.filter_by(
         event_id=event_id).filter_by(group_id=group_id)
     checker = is_group_complete_by_group_id(event_id, group_id)
@@ -680,6 +744,8 @@ def create_knockout_matches(event_id, group_id, winners):
 @login_required
 def knockout_stage(event_id, group_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     prev_group_id = group_id
 
     # Az előző kör mérkőzéseinek lekérése
@@ -733,6 +799,8 @@ def get_losers_by_group(event_id, group_id):
 @login_required
 def event_result(event_id):
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     group_data = generate_group_data_overview(event_id)
     groups = Group.query.filter_by(event_id=event_id)
     out_from_groups = []
@@ -922,22 +990,21 @@ def event_result(event_id):
 @login_required
 def add_participant(event_id):
     form = AddParticipantForm()
-    event = Event.query.get(event_id)  # Az esemény lekérése
+    event = Event.query.get(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     participants = Participant.query.filter_by(event_id=event_id).all()
-    form.event_id.data = event_id  # Az esemény ID-jének beállítása a formon
+    form.event_id.data = event_id
 
     if form.validate_on_submit():
-        name = form.name.data  # A form mezőből lekérjük a nevet
+        name = form.name.data
         new_participant = Participant(
             name=name, event_id=event_id)
-        # Új résztvevő hozzáadása az adatbázishoz
         db.session.add(new_participant)
-        db.session.commit()  # Módosítások mentése az adatbázisba
+        db.session.commit()
 
-        # Visszairányítás az űrlapra
         return redirect(url_for('add_participant', event_id=event_id))
 
-    # Sablon renderelése
     return render_template('add_participant.html', form=form, event=event,  participants=participants)
 
 
@@ -950,7 +1017,6 @@ def del_participant():
     db.session.delete(participant)
     db.session.commit()
 
-    # Visszairányítás az esemény oldalára vagy ahonnan érkezett
     return redirect(url_for('add_participant', event_id=event_id))
 
 
@@ -959,18 +1025,18 @@ def del_participant():
 def add_individual_result(event_id, participant_id):
     form = AddIndividualResultForm()
     event = Event.query.get(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     participant = Participant.query.get_or_404(participant_id)
 
     if form.validate_on_submit():
-        # A mentés során az event_id és a participant_id az URL-ből jön
         new_result = Individual_Result(
             event_id=event_id,
             participant_id=participant_id,
-            score=form.score.data  # Ezt a formból kapjuk
+            score=form.score.data
         )
         db.session.add(new_result)
         db.session.commit()
-        # Visszairányítás a résztvevők listájához
         return redirect(url_for('list_participants', event_id=event_id))
 
     return render_template('add_individual_result.html', form=form, participant=participant, event_id=event_id, event=event)
@@ -979,36 +1045,33 @@ def add_individual_result(event_id, participant_id):
 @app.route('/participants/<int:event_id>', methods=['GET'])
 @login_required
 def list_participants(event_id):
-    # Lekérjük az adott eseményhez tartozó összes résztvevőt
     participants = Participant.query.filter_by(event_id=event_id).all()
     event = Event.query.get(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
 
-    # Minden résztvevőhöz lekérjük a legfrissebb eredményét
     participants_with_scores = []
     for participant in participants:
-        # Lekérjük az adott résztvevő legfrissebb eredményét az adott eseményhez
         latest_result = Individual_Result.query.filter_by(
             participant_id=participant.id, event_id=event_id).order_by(Individual_Result.id.desc()).first()
 
-        # Hozzáadjuk az eredményt a résztvevő objektumhoz (vagy None, ha nincs eredmény)
         if latest_result:
             participant.score = latest_result.score
         else:
             None
 
         participants_with_scores.append(participant)
-    # Visszaküldjük a sablonba a résztvevőket az eredményekkel együtt
     return render_template('list_participants.html', participants=participants_with_scores, event_id=event_id, event=event)
 
 
 @app.route('/individual_final_rank/<int:event_id>', methods=['GET'])
 @login_required
 def individual_final_rank(event_id):
-    # Lekérjük az eseményt és a résztvevőket
     event = Event.query.get_or_404(event_id)
+    if event.user_id != current_user.id:
+        abort(403)
     participants = Participant.query.filter_by(event_id=event_id).all()
 
-    # Minden résztvevőhöz lekérjük a legfrissebb eredményét
     participants_with_scores = []
     for participant in participants:
         latest_result = Individual_Result.query.filter_by(
@@ -1017,19 +1080,17 @@ def individual_final_rank(event_id):
         if latest_result:
             participant.score = latest_result.score
         else:
-            participant.score = None  # Nincs eredmény
+            participant.score = None
 
         participants_with_scores.append(participant)
 
-    # A rangsor kiszámítása a sport típus alapján
-    if event.sport_type in ['running', 'swimming']:  # A kevesebb a jobb
+    if event.sport_type in ['running', 'swimming']:
         participants_with_scores = sorted(
             [p for p in participants_with_scores if p.score is not None], key=lambda p: p.score)
-    elif event.sport_type == 'throwing':  # A több a jobb
+    elif event.sport_type == 'throwing':
         participants_with_scores = sorted(
             [p for p in participants_with_scores if p.score is not None], key=lambda p: p.score, reverse=True)
 
-    # Visszaküldjük a sablonba a résztvevőket és a helyezéseket
     return render_template('individual_final_rank.html', participants=participants_with_scores, event=event)
 
 
@@ -1040,10 +1101,8 @@ def add_event_step1():
     individual_sports = ["running", "swimming", "jumping", "throwing"]
     if form.validate_on_submit():
         session['name'] = form.name.data
-        # A dátum stringként tárolása a sessionben
         session['date'] = form.date.data.strftime('%Y-%m-%d')
         session['sport_type'] = form.sport_type.data
-        # Tovább a következő lépéshez
 
         if session['sport_type'] in individual_sports:
             name = session["name"]
@@ -1114,9 +1173,9 @@ def add_event_step3():
     return render_template('add_event_step3.html', form=form)
 
 
-#########
-# EXPORT
-#########
+@app.errorhandler(403)
+def forbidden(e):
+    return render_template('403.html'), 403
 
 
 if __name__ == '__main__':
