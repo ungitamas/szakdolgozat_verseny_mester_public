@@ -5,3 +5,4 @@ Flask-Bcrypt
 Flask-WTF
 email-validator
 gunicorn
+flask_migrate
